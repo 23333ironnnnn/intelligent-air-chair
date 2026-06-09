@@ -30,7 +30,7 @@ public:
     { auto cfg = _panel.config();
       cfg.pin_cs = 15; cfg.pin_rst = -1; cfg.pin_busy = -1;
       cfg.panel_width = 320; cfg.panel_height = 480;
-      cfg.readable = true; cfg.invert = true; cfg.rgb_order = false;
+      cfg.readable = true; cfg.invert = false; cfg.rgb_order = false;
       cfg.dlen_16bit = false; cfg.bus_shared = true;
       _panel.config(cfg); }
     { auto cfg = _light.config();

@@ -71,7 +71,7 @@ Preferences prefs;
 uint16_t C_BG, C_NAVY, C_ACCENT, C_LINE, C_SUB, C_HEAT, C_WHITE;
 
 // ========== 温控状态 ==========
-int targetTemp = 30;
+int targetTemp = 0;          // 0 = OFF (关闭加热), 上电默认关
 unsigned long boostStartTime = 0;
 bool boostMode = false;
 const unsigned long BOOST_DURATION = 900000UL;   // 15 分钟
@@ -82,21 +82,22 @@ unsigned long lastSample = 0;
 // ========== UI 布局 (横屏 480x320) ==========
 const int SCR_W = 480, SCR_H = 320;
 
-// ---- 拖动滑块: 3 个吸附档位 ----
-const int   TRK_LEFT = 70, TRK_RIGHT = 410;   // 轨道两端
+// ---- 拖动滑块: 4 个吸附档位 (OFF/30/34/38) ----
+const int   NSTOP = 4;
+const int   TRK_LEFT = 60, TRK_RIGHT = 420;    // 轨道两端
 const int   TRK_CY   = 280, TRK_H = 14;        // 轨道中心 y / 粗细
-const int   snapX[3]  = {110, 240, 370};       // 三档吸附点 x
-const int   temps[3]  = {30, 34, 38};
-const char* sublabels[3] = {"LOW", "COMFORT", "WARM"};
-int sliderX = 110;                             // 当前手柄 x
+const int   snapX[NSTOP]  = {96, 200, 304, 408};   // 四档吸附点 x
+const int   temps[NSTOP]  = {0, 30, 34, 38};       // 0 = OFF
+const char* sublabels[NSTOP] = {"OFF", "LOW", "COMFORT", "WARM"};
+int sliderX = 96;                              // 当前手柄 x
 
 int nearestSnap(int x) {
   int best = 0, bd = 999999;
-  for (int i = 0; i < 3; i++) { int d = abs(x - snapX[i]); if (d < bd) { bd = d; best = i; } }
+  for (int i = 0; i < NSTOP; i++) { int d = abs(x - snapX[i]); if (d < bd) { bd = d; best = i; } }
   return best;
 }
 int snapXForTemp(int t) {
-  for (int i = 0; i < 3; i++) if (temps[i] == t) return snapX[i];
+  for (int i = 0; i < NSTOP; i++) if (temps[i] == t) return snapX[i];
   return snapX[0];
 }
 
@@ -154,7 +155,7 @@ void drawSlider(bool dragging) {
   tft.fillRect(0, 214, SCR_W, SCR_H - 214, C_BG);
 
   int dispTemp = dragging ? temps[nearestSnap(sliderX)] : targetTemp;
-  int hx = constrain(sliderX, snapX[0], snapX[2]);
+  int hx = constrain(sliderX, snapX[0], snapX[NSTOP - 1]);
   int top = TRK_CY - TRK_H / 2;
 
   // 轨道底色 + 已选填充
@@ -162,10 +163,10 @@ void drawSlider(bool dragging) {
   if (hx - TRK_LEFT > TRK_H)
     tft.fillRoundRect(TRK_LEFT, top, hx - TRK_LEFT, TRK_H, TRK_H / 2, C_ACCENT);
 
-  // 三档英文标签
+  // 四档英文标签
   tft.setFont(&fonts::FreeSans9pt7b);
   tft.setTextDatum(middle_center);
-  for (int i = 0; i < 3; i++) {
+  for (int i = 0; i < NSTOP; i++) {
     tft.setTextColor(temps[i] == dispTemp ? C_ACCENT : C_SUB, C_BG);
     tft.drawString(sublabels[i], snapX[i], TRK_CY + 26);
   }
@@ -182,7 +183,8 @@ void drawSlider(bool dragging) {
   tft.fillRoundRect(bx, by, bw, bh, 8, C_NAVY);
   tft.fillTriangle(hx - 6, by + bh - 1, hx + 6, by + bh - 1, hx, by + bh + 8, C_NAVY);
   char buf[8];
-  snprintf(buf, sizeof(buf), "%d", dispTemp);
+  if (dispTemp == 0) snprintf(buf, sizeof(buf), "OFF");
+  else               snprintf(buf, sizeof(buf), "%d", dispTemp);
   tft.setFont(&fonts::FreeSansBold12pt7b);
   tft.setTextDatum(middle_center);
   tft.setTextColor(C_WHITE, C_NAVY);
@@ -194,7 +196,10 @@ void drawStatus() {
   tft.setTextDatum(middle_center);
   tft.setFont(&fonts::FreeSans12pt7b);
   char buf[40];
-  if (boostMode) {
+  if (targetTemp == 0) {
+    tft.setTextColor(C_SUB, C_BG);
+    tft.drawString("OFF", SCR_W / 2, 195);
+  } else if (boostMode) {
     long remain = (long)(BOOST_DURATION - (millis() - boostStartTime)) / 1000;
     if (remain < 0) remain = 0;
     tft.setTextColor(C_ACCENT, C_BG);
@@ -285,7 +290,7 @@ void loop() {
   if (tft.getTouch(&tx, &ty)) {
     if (ty >= 214) {                 // 触到滑块区域
       dragging = true;
-      int hx = constrain((int)tx, snapX[0], snapX[2]);
+      int hx = constrain((int)tx, snapX[0], snapX[NSTOP - 1]);
       if (abs(hx - sliderX) >= 3) { sliderX = hx; drawSlider(true); }  // 跟手实时
     }
   } else if (dragging) {             // 松手 -> 吸附到最近档位并选中
@@ -312,7 +317,8 @@ void loop() {
     float t = sensors.getTempCByIndex(0);
     if (t > -50 && t < 125) currentTemp = t;
 
-    if (currentTemp < targetTemp - 0.5)      currentPwm = 255;
+    if (targetTemp == 0)                     currentPwm = 0;   // OFF: 不加热
+    else if (currentTemp < targetTemp - 0.5) currentPwm = 255;
     else if (currentTemp >= targetTemp)      currentPwm = 0;
     else currentPwm = map(int((targetTemp - currentTemp) * 100), 0, 50, 0, 100);
 

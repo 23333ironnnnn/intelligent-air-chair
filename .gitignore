@@ -1,0 +1,11 @@
+# macOS
+.DS_Store
+
+# Arduino 编译产物
+build/
+*.bin
+*.elf
+
+# 编辑器
+.vscode/
+*.swp
